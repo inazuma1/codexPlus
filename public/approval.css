@@ -1,0 +1,1 @@
+.approval-bar{display:flex;gap:12px;align-items:center;padding:8px 16px;border-bottom:1px solid #e6eadf;background:#f5f8f0;flex-shrink:0;flex-wrap:wrap}.approval-bar label{display:flex;align-items:center;gap:7px;margin:0;font-size:12px;color:#315d49;cursor:pointer}.approval-bar input{accent-color:#315d49}.approval-bar span{font-size:10px;color:#7d8b73}
