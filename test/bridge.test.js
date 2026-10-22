@@ -23,6 +23,8 @@ test('端到端：鉴权、聊天、Webhook 去重汇总、持久化', async t =
   async function until(fn) { for(let i=0;i<100;i++) { const value = await fn(); if(value) return value; await new Promise(r=>setTimeout(r,30)); } throw new Error('等待任务完成超时'); }
   await start();
   assert.equal((await request('/api/state', 'GET', undefined, 'bad')).status, 401);
+  const protectedState=await request('/api/state');assert.equal((await protectedState.json()).webhookToken,'hook-test');assert.match(protectedState.headers.get('cache-control'),/no-store/);
+  assert.equal((await request('/api/state','GET',undefined,'hook-test')).status,401);
   assert.equal((await request('/webhooks/test','POST',{},'admin-test')).status,401);
   assert.equal((await fetch(base + '/')).status,200);
   const page=await(await fetch(base+'/')).text();assert.match(page,/type="module"/);

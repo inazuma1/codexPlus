@@ -10,7 +10,7 @@ test('HTTP 双向交互：鉴权、SSE、等待时并行处理、答案校验和
   const dir=mkdtempSync(join(tmpdir(),'codexplus-interactive-'));
   const probe=net.createServer();await new Promise(r=>probe.listen(0,'127.0.0.1',r));const port=probe.address().port;await new Promise(r=>probe.close(r));
   const base=`http://127.0.0.1:${port}`;
-  const child=spawn(process.execPath,['src/server.js'],{env:{...process.env,PORT:String(port),HOST:'127.0.0.1',DATA_DIR:dir,ADMIN_TOKEN:'admin',WEBHOOK_TOKEN:'hook',MOCK_CODEX:'false',CODEX_BIN:process.execPath,CODEX_WORKDIR:process.cwd(),CODEX_TIMEOUT_MS:'2000',NODE_OPTIONS:`--import=${new URL('./fixture-preload.js',import.meta.url).href}`},stdio:['ignore','pipe','pipe']});
+  const child=spawn(process.execPath,['src/server.js'],{env:{...process.env,PORT:String(port),HOST:'127.0.0.1',DATA_DIR:dir,ADMIN_TOKEN:'admin',WEBHOOK_TOKEN:'hook',MOCK_CODEX:'false',CODEX_BIN:process.execPath,CODEX_WORKDIR:dir,CODEX_TIMEOUT_MS:'2000',NODE_OPTIONS:`--import=${new URL('./fixture-preload.js',import.meta.url).href}`},stdio:['ignore','pipe','pipe']});
   let log='';child.stderr.on('data',s=>log+=s);
   t.after(async()=>{if(child.exitCode===null){const end=new Promise(r=>child.once('exit',r));child.kill();await end;}rmSync(dir,{recursive:true,force:true});});
   async function until(fn){for(let i=0;i<150;i++){try{const v=await fn();if(v)return v;}catch{}await new Promise(r=>setTimeout(r,30));}throw new Error('等待超时 '+log);}

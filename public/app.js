@@ -7,11 +7,24 @@ const $ = id => document.getElementById(id);
 const labels = { pending:'等待汇总',queued:'排队中',running:'执行中',waiting:'等待你回应',done:'已完成',failed:'失败' };
 const interactionPanel = document.createElement('div'); interactionPanel.id = 'interactions'; $('compose').before(interactionPanel);
 let interactionSignature = '', streamStarted = false;
+const webhookIntro=document.querySelector('.inbox-intro');
+const webhookSource=node('input'),sourceLabel=node('label','来源名称');webhookSource.id='webhook-source';webhookSource.value='alertmanager';webhookSource.maxLength=64;webhookSource.pattern='[a-zA-Z0-9_-]{1,64}';sourceLabel.htmlFor=webhookSource.id;
+function addressCard(title,description,id,copyLabel='复制地址'){const card=node('div',undefined,'webhook-address'),label=node('label',title),input=node('textarea'),copy=node('button',copyLabel);input.id=id;input.readOnly=true;input.rows=3;label.htmlFor=id;copy.type='button';copy.onclick=async()=>{try{if(navigator.clipboard&&window.isSecureContext)await navigator.clipboard.writeText(input.value);else{input.focus();input.select();if(!document.execCommand('copy'))throw Error('请选中地址手动复制');}copy.textContent='已复制';setTimeout(()=>copy.textContent=copyLabel,1500);}catch(e){error(e);}};card.append(label,node('small','POST'),input,copy,node('p',description));return {card,input,copy};}
+const newSessionAddress=addressCard('新建分析会话','事件分组后自动新建分析会话，不沿用当前对话。','webhook-new-url');
+const boundSessionAddress=addressCard('发送到当前会话','沿用当前会话的历史上下文，后续事件进入同一会话。','webhook-session-url');
+const webhookTokenCard=addressCard('WEBHOOK_TOKEN','用于外部服务接入，请勿公开或提交到代码仓库。','webhook-token','复制令牌');webhookTokenCard.card.querySelector('small').textContent='Authorization: Bearer <WEBHOOK_TOKEN>';webhookTokenCard.input.rows=2;webhookTokenCard.copy.textContent='复制令牌';
+const webhookPolicyHint=node('small');
+webhookIntro.replaceChildren(sourceLabel,webhookSource,newSessionAddress.card,boundSessionAddress.card,webhookTokenCard.card,webhookPolicyHint);
+function renderWebhookAddresses(){webhookPolicyHint.textContent=state?.webhookExecutionMode==='auto'&&state.sandbox==='workspace-write'?'事件先评估风险，可控时自动修复上线；风险不明则停止并给建议，全程不提问。':'事件仅进行只读评估并给出建议，全程不提问。';webhookTokenCard.input.value=state?.webhookToken||'';webhookTokenCard.copy.disabled=!state?.webhookToken;const source=webhookSource.value.trim(),valid=/^[a-zA-Z0-9_-]{1,64}$/.test(source),id=state?.sessions.find(s=>s.id===selected)?.id;const base=valid?`${location.origin}/webhooks/${source}`:'';newSessionAddress.input.value=base;newSessionAddress.input.placeholder=valid?'':'请输入字母、数字、下划线或短横线';newSessionAddress.copy.disabled=!valid;boundSessionAddress.input.value=base&&id?`${base}/${id}`:'';boundSessionAddress.input.placeholder=id?'请填写有效来源名称':'先选择或新建对话，自动填入会话 ID';boundSessionAddress.copy.disabled=!valid||!id;}
+webhookSource.oninput=renderWebhookAddresses;renderWebhookAddresses();
 const controls = node('div',undefined,'mode-controls');
 const modeSelect = node('select'); modeSelect.id='session-mode'; modeSelect.setAttribute('aria-label','会话模式');
 for (const [value,label] of [['default','执行模式'],['plan','计划模式'],['goal','目标模式']]) {const o=node('option',label);o.value=value;modeSelect.append(o);}
 const executePlan = node('button','按计划执行'), renameSession = node('button','重命名'), deleteSession = node('button','删除会话');
 controls.append(modeSelect,executePlan,renameSession,deleteSession); document.querySelector('.chat .section-head').after(controls);
+const sessionInfo=node('div',undefined,'session-info'),sessionIdLabel=node('label','会话 ID'),sessionIdInput=node('input'),copySessionId=node('button','复制');
+sessionIdInput.id='session-id';sessionIdInput.readOnly=true;sessionIdLabel.htmlFor='session-id';sessionInfo.append(sessionIdLabel,sessionIdInput,copySessionId);sessionInfo.hidden=true;controls.before(sessionInfo);
+copySessionId.type='button';copySessionId.onclick=async()=>{try{if(navigator.clipboard&&window.isSecureContext)await navigator.clipboard.writeText(sessionIdInput.value);else{sessionIdInput.focus();sessionIdInput.select();if(!document.execCommand('copy'))throw new Error('请选中会话 ID 手动复制');}copySessionId.textContent='已复制';setTimeout(()=>copySessionId.textContent='复制',1500);}catch(e){error(e);}};
 const approvalBar=node('div',undefined,'approval-bar'),approvalLabel=node('label'),autoApprove=node('input'),approvalHint=node('span');
 autoApprove.type='checkbox';autoApprove.id='auto-approve';approvalLabel.append(autoApprove,document.createTextNode('本会话自动审批'));approvalBar.append(approvalLabel,approvalHint);controls.after(approvalBar);
 async function setAutomaticApproval(enabled) {
@@ -48,6 +61,8 @@ renameSession.onclick=async()=>{
 };
 function renderModes() {
   const s=state.sessions.find(s=>s.id===selected),busy=state.jobs.some(j=>j.session_id===selected&&['queued','running','waiting'].includes(j.status));
+  renderWebhookAddresses();
+  sessionInfo.hidden=!s;sessionIdInput.value=s?.id||'';
   modeSelect.value=s?.mode||'default';modeSelect.disabled=busy;deleteSession.disabled=!s||busy;deleteSession.title=busy?'请先停止任务再删除':'';
   renameSession.disabled=!s||busy;renameSession.title=busy?'任务结束或停止后可重命名':'';
   autoApprove.checked=s?.auto_approve===true;autoApprove.disabled=!s;
@@ -65,7 +80,7 @@ function renderLive() {
   if (!items.length) { live?.remove(); return; }
   if (!live) { live = node('article', undefined, 'assistant'); live.id = 'live-output'; $('messages').append(live); }
   const nearBottom = $('messages').scrollHeight - $('messages').scrollTop - $('messages').clientHeight < 100;
-  live.replaceChildren(node('div', 'CODEX · 正在回复', 'role'), markdownContent(items.map(a => a.text || '正在处理…').join('\n\n')));
+  live.replaceChildren(node('div', 'CODEX · 正在回复', 'role'), markdownContent(items.map(a => a.text || a.activity || '正在处理…').join('\n\n')));
   if (nearBottom) $('messages').scrollTop = $('messages').scrollHeight;
 }
 function renderApprovalContent(parent,r) {
@@ -136,7 +151,7 @@ async function connectStream() {
 }
 function node(tag, text, cls) { const e = document.createElement(tag); if (text !== undefined) e.textContent = text; if (cls) e.className = cls; return e; }
 function error(e) { $('error').textContent = e.message; $('error').hidden = false; setTimeout(() => $('error').hidden = true, 6000); }
-function expireLogin(){token='';forgetToken();$('login-error').textContent='访问令牌已失效，请重新输入。';if(!$('login').open)$('login').showModal();}
+function expireLogin(){token='';forgetToken();if(state){state.webhookToken='';renderWebhookAddresses();}$('login-error').textContent='访问令牌已失效，请重新输入。';if(!$('login').open)$('login').showModal();}
 async function api(path, options = {}) { const requestToken=token;const res = await fetch(path, { ...options, headers: { 'Authorization': `Bearer ${requestToken}`, 'Content-Type': 'application/json' } }); const value = await res.json(); if (!res.ok) { if (res.status === 401&&token===requestToken) expireLogin(); throw new Error(value.error); } return value; }
 function date(s) { return new Date(s).toLocaleString('zh-CN', { hour12:false }); }
 async function select(id) { selected = id; messageSignature = ''; await refresh(); }
